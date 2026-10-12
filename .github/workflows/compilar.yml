@@ -24,6 +24,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Limpiar carpeta android previa (Si existe)
+        run: rm -rf android
+
       - name: Instalar Capacitor v6 Estable
         run: |
           npm init -y
@@ -31,6 +34,7 @@ jobs:
 
       - name: Crear proyecto Android
         run: |
+
           npx cap init "Lupa Microscopio" "com.peperey.microscopio" --web-dir www
           npx cap add android
           python3 configurar_permisos.py
