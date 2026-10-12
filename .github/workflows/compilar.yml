@@ -38,8 +38,9 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Configurar icono y permisos
+      - name: Instalar Pillow y configurar icono y permisos
         run: |
+          pip install pillow
           python3 configurar_proyecto.py
 
       - name: Compilar APK con Gradle
