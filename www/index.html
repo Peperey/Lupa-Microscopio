@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lupa Microscopio</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
+  body { background: #000; color: #fff; font-family: sans-serif; overflow: hidden; height: 100vh; }
+  
+  #viewport {
+    position: relative; width: 100vw; height: 100vh; overflow: hidden;
+    display: flex; justify-content: center; align-items: center;
+  }
+  video, canvas {
+    position: absolute; width: 100%; height: 100%; object-fit: cover;
+    transform-origin: center center;
+  }
+  canvas { display: none; z-index: 2; }
+
+  /* Mira central de microscopio */
+  .crosshair {
+    position: absolute; z-index: 3; pointer-events: none;
+    width: 40px; height: 40px; border: 1px solid rgba(0, 255, 136, 0.4);
+    border-radius: 50%;
+  }
+  .crosshair::before, .crosshair::after {
+    content: ''; position: absolute; background: rgba(0, 255, 136, 0.5);
+  }
+  .crosshair::before { top: 19px; left: -10px; width: 60px; height: 1px; }
+  .crosshair::after { top: -10px; left: 19px; width: 1px; height: 60px; }
+
+  /* Indicador de estado */
+  #statusBadge {
+    position: absolute; top: 20px; left: 20px; z-index: 10;
+    background: rgba(0,0,0,0.6); padding: 5px 12px; border-radius: 20px;
+    font-size: 12px; font-weight: bold; color: #00ff88; border: 1px solid #00ff88;
+  }
+
+  /* Controles inferiores */
+  .controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 10; display: flex; flex-direction: column; gap: 10px;
+    background: rgba(0,0,0,0.85); padding: 14px; border-radius: 16px;
+    width: 92%; max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  }
+  .slider-row { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: bold; }
+  input[type=range] { flex: 1; accent-color: #00ff88; }
+  
+  .btn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  button {
+    background: #222; border: 1px solid #444; color: #fff; border-radius: 8px;
+    padding: 10px 4px; font-size: 12px; cursor: pointer; text-align: center;
+    font-weight: 600;
+  }
+  button:active { background: #333; }
+  button.active { border-color: #00ff88; color: #00ff88; }
+  #btnFreeze.frozen { background: #ff4444; border-color: #ff4444; color: #fff; }
+</style>
+</head>
+<body>
+
+<div id="viewport">
+  <video id="cam" autoplay playsinline muted></video>
+  <canvas id="freezeCanvas"></canvas>
+  <div class="crosshair"></div>
+</div>
+
+<div id="statusBadge">EN VIVO</div>
+
+<div class="controls">
+  <div class="slider-row">
+    <span>Zoom:</span>
+    <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1">
+    <span id="zoomVal">1.0x</span>
+  </div>
+
+  <div class="btn-grid">
+    <button id="btnTorch">🔦 Flash</button>
+    <button id="btnMode">🎨 Filtro</button>
+    <button id="btnFreeze">❄️ Pausar</button>
+    <button id="btnSave">💾 Guardar</button>
+  </div>
+</div>
+
+<script>
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('freezeCanvas');
+  const ctx = canvas.getContext('2d');
+  const badge = document.getElementById('statusBadge');
+  const zoomSlider = document.getElementById('zoomSlider');
+  const zoomVal = document.getElementById('zoomVal');
+  const btnTorch = document.getElementById('btnTorch');
+  const btnMode = document.getElementById('btnMode');
+  const btnFreeze = document.getElementById('btnFreeze');
+  const btnSave = document.getElementById('btnSave');
+
+  let videoTrack = null;
+  let isTorch = false;
+  let isFrozen = false;
+  let currentFilterIndex = 0;
+
+  const filters = [
+    { name: "Normal", filter: "none" },
+    { name: "Alto Contraste", filter: "contrast(250%) grayscale(100%)" },
+    { name: "Invertido / Rayos X", filter: "invert(100%) contrast(200%) grayscale(100%)" },
+    { name: "Realce Circuitos", filter: "contrast(300%) hue-rotate(90deg)" }
+  ];
+
+  // Iniciar cámara trasera en máxima resolución disponible
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 } },
+    audio: false
+  }).then(stream => {
+    video.srcObject = stream;
+    videoTrack = stream.getVideoTracks()[0];
+  }).catch(err => alert("Error cámara: " + err));
+
+  // 1. Control de Zoom fluido
+  function setZoom(val) {
+    zoomVal.textContent = parseFloat(val).toFixed(1) + "x";
+    video.style.transform = `scale(${val})`;
+    canvas.style.transform = `scale(${val})`;
+  }
+  zoomSlider.addEventListener('input', e => setZoom(e.target.value));
+
+  // 2. Linterna
+  btnTorch.addEventListener('click', async () => {
+    if (!videoTrack) return;
+    try {
+      isTorch = !isTorch;
+      await videoTrack.applyConstraints({ advanced: [{ torch: isTorch }] });
+      btnTorch.classList.toggle('active', isTorch);
+    } catch(e) { alert("Tu dispositivo no soporta flash continuo."); }
+  });
+
+  // 3. Modos de Filtro
+  btnMode.addEventListener('click', () => {
+    currentFilterIndex = (currentFilterIndex + 1) % filters.length;
+    const f = filters[currentFilterIndex];
+    video.style.filter = f.filter;
+    canvas.style.filter = f.filter;
+  });
+
+  // 4. Congelar Pantalla (Freeze Frame)
+  btnFreeze.addEventListener('click', () => {
+    isFrozen = !isFrozen;
+    if (isFrozen) {
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.style.display = 'block';
+      video.style.display = 'none';
+      btnFreeze.textContent = "▶️ Reanudar";
+      btnFreeze.classList.add('frozen');
+      badge.textContent = "CONGELADO";
+      badge.style.color = "#ff4444";
+      badge.style.borderColor = "#ff4444";
+    } else {
+      canvas.style.display = 'none';
+      video.style.display = 'block';
+      btnFreeze.textContent = "❄️ Pausar";
+      btnFreeze.classList.remove('frozen');
+      badge.textContent = "EN VIVO";
+      badge.style.color = "#00ff88";
+      badge.style.borderColor = "#00ff88";
+    }
+  });
+
+  // 5. Guardar Captura
+  btnSave.addEventListener('click', () => {
+    const saveCanvas = document.createElement('canvas');
+    saveCanvas.width = video.videoWidth || 1280;
+    saveCanvas.height = video.videoHeight || 720;
+    const sCtx = saveCanvas.getContext('2d');
+    
+    // Aplicar filtro al guardar si está activo
+    sCtx.filter = filters[currentFilterIndex].filter;
+    sCtx.drawImage(isFrozen ? canvas : video, 0, 0, saveCanvas.width, saveCanvas.height);
+    
+    const link = document.createElement('a');
+    link.download = `microscopio_${Date.now()}.png`;
+    link.href = saveCanvas.toDataURL('image/png');
+    link.click();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [ main, principal ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Instalar Capacitor v6 Estable
+        run: |
+          npm init -y
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
+
+      - name: Crear proyecto Android
+        run: |
+          npx cap init "Lupa Microscopio" "com.peperey.microscopio" --web-dir www
+          npx cap add android
+          python3 configurar_permisos.py
+          npx cap sync android
+
+      - name: Compilar APK con Gradle
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Subir APK generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lupa-Microscopio-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
