@@ -24,21 +24,23 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Limpiar carpeta android previa (Si existe)
+      - name: Limpiar carpeta android previa
         run: rm -rf android
 
-      - name: Instalar Capacitor v6 Estable
+      - name: Instalar Capacitor v6
         run: |
           npm init -y
           npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
 
       - name: Crear proyecto Android
         run: |
-
           npx cap init "Lupa Microscopio" "com.peperey.microscopio" --web-dir www
           npx cap add android
-          python3 configurar_permisos.py
           npx cap sync android
+
+      - name: Configurar icono y permisos
+        run: |
+          python3 configurar_proyecto.py
 
       - name: Compilar APK con Gradle
         run: |
